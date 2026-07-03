@@ -128,6 +128,13 @@ final class AppModel {
         history.record(outcome: .success, imageData: nil)
     }
 
+    /// Stops the monitor on app termination (kills the `log stream` child)
+    /// without changing the saved monitoring preference.
+    func shutdown() {
+        monitor.stop()
+        isMonitoring = false
+    }
+
     // MARK: - Login item
 
     func applyLaunchAtLogin() {

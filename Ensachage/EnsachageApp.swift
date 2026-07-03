@@ -7,6 +7,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Enforce a single instance: this (newest) launch wins, older copies die.
+        terminateOtherInstances()
+
         // Show/hide the Dock icon as windows open and close.
         let center = NotificationCenter.default
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didBecomeMainNotification] {
@@ -17,6 +20,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         center.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [model] _ in
             // Defer until after the window is actually gone before re-checking.
             DispatchQueue.main.async { model.refreshDockVisibility() }
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Stop the log-stream child so it isn't orphaned.
+        model.shutdown()
+    }
+
+    /// Terminates every other running copy of this app (same bundle id). Tries a
+    /// graceful quit first, then force-kills any that don't exit promptly.
+    private func terminateOtherInstances() {
+        guard let bundleID = Bundle.main.bundleIdentifier else { return }
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+            .filter { $0.processIdentifier != myPID }
+        guard !others.isEmpty else { return }
+
+        others.forEach { $0.terminate() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            for app in others where !app.isTerminated {
+                app.forceTerminate()
+            }
         }
     }
 }
