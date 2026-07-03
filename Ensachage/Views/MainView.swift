@@ -51,7 +51,7 @@ struct MainView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Autoriser") {
+            Button(model.cameraDenied ? "Ouvrir les Réglages…" : "Autoriser") {
                 Task { _ = await model.requestCameraAccess() }
             }
         }

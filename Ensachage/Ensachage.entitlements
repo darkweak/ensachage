@@ -5,7 +5,10 @@
 	<!--
 	  The App Sandbox is intentionally disabled: Ensachage spawns `/usr/bin/log`
 	  to stream the system unlock log, which a sandboxed app may not do.
-	  Camera access is still gated by TCC via NSCameraUsageDescription.
+	  The camera entitlement is required because the Hardened Runtime is enabled;
+	  actual access is still gated by TCC via NSCameraUsageDescription.
 	-->
+	<key>com.apple.security.device.camera</key>
+	<true/>
 </dict>
 </plist>

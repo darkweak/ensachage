@@ -16,6 +16,9 @@ final class AppModel {
     private(set) var cameraAuthorized: Bool
     private(set) var isMonitoring = false
 
+    /// True when camera access was explicitly denied (must be re-enabled in System Settings).
+    var cameraDenied: Bool { camera.authorizationStatus == .denied }
+
     /// Set on first launch so the UI can present itself once after the prompt.
     private(set) var openJournalAtLaunch = false
 
@@ -37,13 +40,18 @@ final class AppModel {
         guard !didStart else { return }
         didStart = true
 
-        if !settings.hasCompletedOnboarding {
-            // Ask for camera permission at the very first launch.
+        // Ask for camera permission whenever it hasn't been decided yet — at the
+        // first launch, but also after a permissions reset. The system prompt
+        // only appears while the status is `notDetermined`.
+        if camera.authorizationStatus == .notDetermined {
             _ = await requestCameraAccess()
-            settings.hasCompletedOnboarding = true
-            openJournalAtLaunch = true
         } else {
             cameraAuthorized = camera.authorizationStatus == .authorized
+        }
+
+        if !settings.hasCompletedOnboarding {
+            settings.hasCompletedOnboarding = true
+            openJournalAtLaunch = true
         }
 
         applyLaunchAtLogin()
@@ -52,10 +60,31 @@ final class AppModel {
 
     // MARK: - Camera
 
+    /// Requests camera access. The system prompt only appears when the status is
+    /// `notDetermined`; if it was already denied we can't re-prompt, so we open
+    /// the Camera privacy pane in System Settings instead.
+    @discardableResult
     func requestCameraAccess() async -> Bool {
-        let granted = await camera.requestAccess()
-        cameraAuthorized = granted
-        return granted
+        switch camera.authorizationStatus {
+        case .authorized:
+            cameraAuthorized = true
+            return true
+        case .notDetermined:
+            let granted = await camera.requestAccess()
+            cameraAuthorized = granted
+            return granted
+        case .denied:
+            cameraAuthorized = false
+            openCameraPrivacySettings()
+            return false
+        }
+    }
+
+    /// Opens System Settings ▸ Privacy & Security ▸ Camera.
+    func openCameraPrivacySettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     /// Manually capture a frame (used by the "test" action) to confirm the camera works.

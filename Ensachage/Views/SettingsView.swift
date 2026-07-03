@@ -186,7 +186,7 @@ private struct GeneralSettings: View {
                         .foregroundStyle(model.cameraAuthorized ? .green : .orange)
                 }
                 if !model.cameraAuthorized {
-                    Button("Autoriser la caméra…") {
+                    Button(model.cameraDenied ? "Ouvrir les Réglages…" : "Autoriser la caméra…") {
                         Task { _ = await model.requestCameraAccess() }
                     }
                 }

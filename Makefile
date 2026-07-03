@@ -19,7 +19,7 @@ DISTDIR    := dist
 
 XCODEBUILD := xcodebuild -project $(PROJECT) -scheme $(SCHEME) -derivedDataPath $(DERIVED)
 
-.PHONY: all build release run clean open dist watch-auth reset
+.PHONY: all build release run clean open dist doctor watch-auth reset
 
 all: build
 
@@ -53,6 +53,30 @@ dist:
 	@echo "  « Ouvrir » (Gatekeeper), or run:"
 	@echo "      xattr -dr com.apple.quarantine /Applications/$(APP).app"
 
+# Print signature, entitlements and key Info.plist values for the built app.
+doctor:
+	@APP_PATH="$(PRODUCT)"; \
+	if [ ! -d "$$APP_PATH" ]; then echo "✗ $$APP_PATH introuvable — lancez d'abord: make run"; exit 1; fi; \
+	echo "🩺 Ensachage — diagnostic"; \
+	echo "App : $$APP_PATH"; \
+	echo; \
+	echo "── Signature ───────────────────────────────"; \
+	codesign -dvvv "$$APP_PATH" 2>&1 | grep -iE "^Identifier|^Authority|^TeamIdentifier|^Signature|adhoc|Sealed" || echo "  (non signé)"; \
+	echo; \
+	echo "── Entitlements ────────────────────────────"; \
+	codesign -d --entitlements - "$$APP_PATH" 2>/dev/null | grep -iE "com\.apple\.security|sandbox|device\.camera|apple-events" || echo "  (aucun / non signé)"; \
+	echo; \
+	echo "── Info.plist ──────────────────────────────"; \
+	PL="$$APP_PATH/Contents/Info.plist"; \
+	printf "  Bundle id    : %s\n" "$$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$$PL" 2>/dev/null)"; \
+	printf "  LSUIElement  : %s\n" "$$(/usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$$PL" 2>/dev/null)"; \
+	printf "  Icon name    : %s\n" "$$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' "$$PL" 2>/dev/null)"; \
+	printf "  Camera usage : %s\n" "$$(/usr/libexec/PlistBuddy -c 'Print :NSCameraUsageDescription' "$$PL" 2>/dev/null)"; \
+	printf "  AppleEvents  : %s\n" "$$(/usr/libexec/PlistBuddy -c 'Print :NSAppleEventsUsageDescription' "$$PL" 2>/dev/null)"; \
+	echo; \
+	echo "── Gatekeeper ──────────────────────────────"; \
+	spctl -a -vvv "$$APP_PATH" 2>&1 | head -3
+
 watch-auth:
 	@echo "🔎 Lock the screen and FAIL an unlock (bad password / fingerprint / PIN)."
 	@echo "   The matching log lines print below — copy them into Settings ▸ Avancé."
@@ -64,4 +88,13 @@ reset:
 	@echo "⚠  Removing saved settings, journal and intruder photos…"
 	@defaults delete $(BUNDLE_ID) 2>/dev/null || true
 	@rm -rf "$(HOME)/Library/Application Support/Ensachage"
+	@tccutil reset Camera $(BUNDLE_ID) || true
+	@tccutil reset Microphone $(BUNDLE_ID) || true
+	@tccutil reset ScreenCapture $(BUNDLE_ID) || true
+	@tccutil reset Accessibility $(BUNDLE_ID) || true
+	@tccutil reset Contacts $(BUNDLE_ID) || true
+	@tccutil reset Calendar $(BUNDLE_ID) || true
+	@tccutil reset Photos $(BUNDLE_ID) || true
+	@tccutil reset Reminders $(BUNDLE_ID) || true
+	@tccutil reset Location $(BUNDLE_ID) || true
 	@echo "Done."
