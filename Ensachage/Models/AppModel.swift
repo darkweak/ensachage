@@ -50,6 +50,14 @@ final class AppModel {
         }
 
         if !settings.hasCompletedOnboarding {
+            // First boot: Apple Mail is the default e-mail method, so ask to
+            // control Mail now. If the user declines, fall back to SMTP.
+            if settings.emailMethod == .appleMail {
+                let permission = await Task.detached { MailAppSender.requestAutomationPermission() }.value
+                if permission != .authorized {
+                    settings.emailMethod = .smtp
+                }
+            }
             settings.hasCompletedOnboarding = true
             openJournalAtLaunch = true
         }
@@ -281,9 +289,7 @@ final class AppModel {
             guard !to.isEmpty else { return }
             let from = settings.mailSenderAddress.trimmingCharacters(in: .whitespaces)
             let path = history.imageURL(for: entry)?.path
-            Task.detached {
-                MailAppSender.send(subject: subject, body: body, attachmentPath: path, from: from, to: to)
-            }
+            MailAppSender.send(subject: subject, body: body, attachmentPath: path, from: from, to: to)
         }
     }
 
@@ -311,9 +317,7 @@ final class AppModel {
                 return "Définissez l'e-mail du propriétaire (onglet Général) avant d'envoyer un test."
             }
             let from = settings.mailSenderAddress.trimmingCharacters(in: .whitespaces)
-            let result = await Task.detached {
-                MailAppSender.send(subject: subject, body: body, attachmentPath: nil, from: from, to: to)
-            }.value
+            let result = MailAppSender.send(subject: subject, body: body, attachmentPath: nil, from: from, to: to)
             if let error = result { return "✗ Échec : \(error)" }
             return "✓ E-mail de test envoyé à \(to) via Apple Mail."
         }
@@ -335,8 +339,8 @@ final class AppModel {
     }
 
     /// Fetches the sender addresses configured in Apple Mail (best-effort).
-    func mailSenderAddresses() async -> [String] {
-        await Task.detached { MailAppSender.senderAddresses() }.value
+    func mailSenderAddresses() -> [String] {
+        MailAppSender.senderAddresses()
     }
 
     // MARK: - Automatic iMessage notification
@@ -375,9 +379,7 @@ final class AppModel {
         guard !phone.isEmpty else { return }
         let text = shareSummary(for: entry)
         let attachment = history.imageURL(for: entry)?.path
-        Task.detached {
-            IMessageSender.send(text: text, attachmentPath: attachment, to: phone)
-        }
+        IMessageSender.send(text: text, attachmentPath: attachment, to: phone)
     }
 
     /// Sends a test iMessage and returns a human-readable result for the UI.
@@ -386,13 +388,11 @@ final class AppModel {
         guard !phone.isEmpty else {
             return "Numéro / identifiant iMessage du propriétaire manquant."
         }
-        let result = await Task.detached {
-            IMessageSender.send(
-                text: "Ensachage 🍏 — iMessage de test. Les alertes sont bien configurées.",
-                attachmentPath: nil,
-                to: phone
-            )
-        }.value
+        let result = IMessageSender.send(
+            text: "Ensachage 🍏 — iMessage de test. Les alertes sont bien configurées.",
+            attachmentPath: nil,
+            to: phone
+        )
         if let error = result {
             return "✗ Échec : \(error)"
         }

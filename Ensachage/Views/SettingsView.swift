@@ -147,14 +147,12 @@ private struct MailSettings: View {
 
     private func loadAccounts() {
         loadingAccounts = true
-        Task {
-            let accounts = await model.mailSenderAddresses()
-            mailAccounts = accounts
-            if model.settings.mailSenderAddress.isEmpty, let first = accounts.first {
-                model.settings.mailSenderAddress = first
-            }
-            loadingAccounts = false
+        let accounts = model.mailSenderAddresses()
+        mailAccounts = accounts
+        if model.settings.mailSenderAddress.isEmpty, let first = accounts.first {
+            model.settings.mailSenderAddress = first
         }
+        loadingAccounts = false
     }
 
     private func sendTest() {

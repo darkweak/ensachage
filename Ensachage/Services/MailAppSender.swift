@@ -2,18 +2,21 @@ import Foundation
 import AppKit
 import CoreServices
 
-/// Sends e-mail by scripting the **Apple Mail** app, using one of its already
-/// configured accounts — so no SMTP host / username / password is needed.
+/// Sends e-mail by scripting **Apple Mail** using one of its configured accounts
+/// — no SMTP host / username / password needed.
 ///
-/// Like iMessage, this drives Mail through Apple events and therefore needs a
-/// one-time **Automation** permission ("control Mail") and Mail to have at least
-/// one account set up. `send` blocks until `osascript` exits — call it off the
-/// main thread.
+/// The AppleScript runs **in-process** via `NSAppleScript` (not a spawned
+/// `osascript`) so the Apple events are attributed to Ensachage: the app that
+/// holds the `com.apple.security.automation.apple-events` entitlement, the
+/// `NSAppleEventsUsageDescription`, and the TCC Automation grant. Sending through
+/// a child `osascript` process instead attributes the events to `osascript`,
+/// which breaks the permission.
+///
+/// `NSAppleScript` must run on the main thread, hence `@MainActor`.
+@MainActor
 enum MailAppSender {
 
-    static let bundleID = "com.apple.mail"
-
-    // MARK: - Accounts
+    nonisolated static let bundleID = "com.apple.mail"
 
     /// Returns the sender addresses of every account configured in Mail.
     static func senderAddresses() -> [String] {
@@ -30,15 +33,13 @@ enum MailAppSender {
         end tell
         return out
         """
-        guard let output = runOSAScript(script).output else { return [] }
+        guard let output = run(script).output else { return [] }
         var seen = Set<String>()
         return output
             .split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && seen.insert($0).inserted }
     }
-
-    // MARK: - Sending
 
     /// Returns `nil` on success, or an error description on failure.
     @discardableResult
@@ -61,19 +62,14 @@ enum MailAppSender {
         lines.append("end tell")
         lines.append("send newMessage")
         lines.append("end tell")
-
-        let result = runOSAScript(lines.joined(separator: "\n"))
-        if result.status != 0 {
-            return result.error.isEmpty ? "Mail a échoué (code \(result.status))" : result.error
-        }
-        return nil
+        return run(lines.joined(separator: "\n")).error
     }
 
-    // MARK: - Automation permission
+    // MARK: - Automation permission (thread-agnostic Apple-event checks)
 
     enum Authorization { case authorized, denied, mailNotRunning, unknown }
 
-    static func automationStatus(prompt: Bool) -> Authorization {
+    nonisolated static func automationStatus(prompt: Bool) -> Authorization {
         let target = NSAppleEventDescriptor(bundleIdentifier: bundleID)
         guard let desc = target.aeDesc else { return .unknown }
         switch AEDeterminePermissionToAutomateTarget(desc, typeWildCard, typeWildCard, prompt) {
@@ -84,7 +80,7 @@ enum MailAppSender {
         }
     }
 
-    static func requestAutomationPermission() -> Authorization {
+    nonisolated static func requestAutomationPermission() -> Authorization {
         var result = automationStatus(prompt: true)
         if result == .mailNotRunning {
             launchMail()
@@ -94,7 +90,7 @@ enum MailAppSender {
         return result
     }
 
-    private static func launchMail() {
+    nonisolated private static func launchMail() {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return }
         let config = NSWorkspace.OpenConfiguration()
         config.activates = false
@@ -106,6 +102,19 @@ enum MailAppSender {
 
     // MARK: - Helpers
 
+    private static func run(_ source: String) -> (output: String?, error: String?) {
+        var errorDict: NSDictionary?
+        guard let script = NSAppleScript(source: source) else {
+            return (nil, "Script AppleScript invalide")
+        }
+        let result = script.executeAndReturnError(&errorDict)
+        if let errorDict {
+            let message = (errorDict[NSAppleScript.errorMessage] as? String) ?? "\(errorDict)"
+            return (nil, message)
+        }
+        return (result.stringValue, nil)
+    }
+
     /// AppleScript string expression, preserving line breaks via `& linefeed &`.
     private static func expr(_ s: String) -> String {
         let escaped = s
@@ -115,26 +124,5 @@ enum MailAppSender {
             .components(separatedBy: "\n")
             .map { "\"\($0)\"" }
             .joined(separator: " & linefeed & ")
-    }
-
-    private static func runOSAScript(_ script: String) -> (status: Int32, output: String?, error: String) {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        task.arguments = ["-e", script]
-        let outPipe = Pipe()
-        let errPipe = Pipe()
-        task.standardOutput = outPipe
-        task.standardError = errPipe
-        do {
-            try task.run()
-            task.waitUntilExit()
-        } catch {
-            return (-1, nil, error.localizedDescription)
-        }
-        let output = String(decoding: outPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let errorText = String(decoding: errPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return (task.terminationStatus, output, errorText)
     }
 }

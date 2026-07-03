@@ -10,5 +10,12 @@
 	-->
 	<key>com.apple.security.device.camera</key>
 	<true/>
+	<!--
+	  Required (Hardened Runtime) to send Apple events in-process to Mail and
+	  Messages for the automatic owner alerts. Access is still gated by TCC
+	  (Automation permission) and NSAppleEventsUsageDescription.
+	-->
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
 </dict>
 </plist>

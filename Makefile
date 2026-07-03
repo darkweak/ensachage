@@ -89,6 +89,7 @@ reset:
 	@defaults delete $(BUNDLE_ID) 2>/dev/null || true
 	@rm -rf "$(HOME)/Library/Application Support/Ensachage"
 	@tccutil reset Camera $(BUNDLE_ID) || true
+	@tccutil reset AppleEvents $(BUNDLE_ID) || true
 	@tccutil reset Microphone $(BUNDLE_ID) || true
 	@tccutil reset ScreenCapture $(BUNDLE_ID) || true
 	@tccutil reset Accessibility $(BUNDLE_ID) || true
