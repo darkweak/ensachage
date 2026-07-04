@@ -37,7 +37,7 @@ struct MenuContent: View {
         Divider()
 
         Button("Quitter Ensachage") {
-            NSApplication.shared.terminate(nil)
+            model.quit()
         }
         .keyboardShortcut("q", modifiers: .command)
     }

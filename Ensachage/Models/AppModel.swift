@@ -16,6 +16,8 @@ final class AppModel {
     private(set) var cameraAuthorized: Bool
     private(set) var isMonitoring = false
 
+    @ObservationIgnored private var isTerminating = false
+
     /// True when camera access was explicitly denied (must be re-enabled in System Settings).
     var cameraDenied: Bool { camera.authorizationStatus == .denied }
 
@@ -136,11 +138,73 @@ final class AppModel {
         history.record(outcome: .success, imageData: nil)
     }
 
-    /// Stops the monitor on app termination (kills the `log stream` child)
-    /// without changing the saved monitoring preference.
+    /// Stops the monitor on app termination (kills the `log stream` child) and
+    /// drops the Dock icon so it doesn't linger as a "running in background"
+    /// ghost. Does not change the saved monitoring preference.
     func shutdown() {
+        isTerminating = true
         monitor.stop()
         isMonitoring = false
+        NSApp.setActivationPolicy(.accessory)
+    }
+
+    /// Fully quits the app. Hides the Dock icon first (so quitting while a window
+    /// is open doesn't leave a ghost icon), then terminates.
+    func quit() {
+        shutdown()
+        NSApp.terminate(nil)
+    }
+
+    // MARK: - Factory reset
+
+    /// Erases all settings, the journal, photos, stored credentials and resets
+    /// the app's TCC permissions (camera, automation), then relaunches so the
+    /// fresh state (and permission prompts) take effect.
+    func factoryReset() {
+        isTerminating = true
+        monitor.stop()
+
+        // Journal + captured photos.
+        history.clear()
+
+        // Stored SMTP password (Keychain).
+        settings.smtpPassword = nil
+
+        // All UserDefaults-backed settings.
+        if let bundleID = Bundle.main.bundleIdentifier {
+            UserDefaults.standard.removePersistentDomain(forName: bundleID)
+            UserDefaults.standard.synchronize()
+        }
+
+        // TCC permissions (camera, Apple-events automation, microphone).
+        resetPermissions()
+
+        relaunch()
+    }
+
+    private func resetPermissions() {
+        guard let bundleID = Bundle.main.bundleIdentifier else { return }
+        for service in ["Camera", "AppleEvents", "Microphone"] {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+            task.arguments = ["reset", service, bundleID]
+            task.standardOutput = FileHandle.nullDevice
+            task.standardError = FileHandle.nullDevice
+            try? task.run()
+            task.waitUntilExit()
+        }
+    }
+
+    /// Launches a fresh copy after this process exits, then terminates.
+    private func relaunch() {
+        let path = Bundle.main.bundlePath
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", "sleep 1; /usr/bin/open \"\(path)\""]
+        try? task.run() // detached; survives our termination
+
+        NSApp.setActivationPolicy(.accessory)
+        NSApp.terminate(nil)
     }
 
     // MARK: - Login item
@@ -174,6 +238,7 @@ final class AppModel {
     /// notifications from the app delegate, so it stays in sync regardless of
     /// SwiftUI view lifecycle quirks.
     func refreshDockVisibility() {
+        guard !isTerminating else { return }
         let hasRealWindow = NSApp.windows.contains { window in
             window.isVisible && window.styleMask.contains(.titled)
         }

@@ -167,6 +167,7 @@ private struct MailSettings: View {
 
 private struct GeneralSettings: View {
     @Environment(AppModel.self) private var model
+    @State private var showFactoryResetConfirm = false
 
     var body: some View {
         Form {
@@ -214,8 +215,26 @@ private struct GeneralSettings: View {
                     model.history.clear()
                 }
             }
+
+            Section {
+                Button("Réinitialisation d'usine…", role: .destructive) {
+                    showFactoryResetConfirm = true
+                }
+            } header: {
+                Text("Réinitialisation")
+            } footer: {
+                Text("Efface tous les réglages, le journal, les photos, les identifiants et les autorisations (caméra, automatisation).")
+            }
         }
         .formStyle(.grouped)
+        .alert("Réinitialiser Ensachage ?", isPresented: $showFactoryResetConfirm) {
+            Button("Réinitialiser et redémarrer", role: .destructive) {
+                model.factoryReset()
+            }
+            Button("Annuler", role: .cancel) { }
+        } message: {
+            Text("Tous les réglages, le journal, les photos, les identifiants enregistrés et les autorisations (caméra, automatisation) seront effacés. L'application va se fermer et redémarrer automatiquement.")
+        }
     }
 }
 
